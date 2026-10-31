@@ -1,0 +1,57 @@
+plugins {
+    id 'eclipse'
+    id 'idea'
+    id 'net.minecraftforge.gradle' version '6.0.54'
+    id 'org.spongepowered.mixin' version '0.7.38'
+}
+version = mod_version
+group = mod_group_id
+base { archivesName = mod_id }
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+minecraft {
+    mappings channel: mapping_channel, version: mapping_version
+    accessTransformer = file('src/main/resources/META-INF/accesstransformer.cfg')
+    copyIdeResources = true
+    runs {
+        configureEach {
+            workingDirectory project.file('run')
+            property 'forge.logging.console.level', 'info'
+            mods { "${mod_id}" { source sourceSets.main } }
+        }
+        client { }
+        server { args '--nogui' }
+    }
+}
+
+mixin {
+    add sourceSets.main, 'cute_mob_models_fix.refmap.json'
+    config 'cute_mob_models_fix.mixins.json'
+}
+
+repositories { mavenCentral() }
+dependencies {
+    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+    implementation files('libs/entity_model_features-3.3.12-1.20.1-forge.jar', 'libs/entity_texture_features-7.2.6-1.20.1-forge.jar')
+    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+    // testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+}
+
+tasks.named('processResources', ProcessResources) {
+    def values = [minecraft_version_range: minecraft_version_range, forge_version_range: forge_version_range,
+        loader_version_range: loader_version_range, mod_id: mod_id, mod_name: mod_name,
+        mod_license: mod_license, mod_version: mod_version, mod_authors: mod_authors]
+    inputs.properties values
+    filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) { expand values }
+}
+
+tasks.named('jar', Jar) {
+    manifest { attributes 'MixinConfigs': 'cute_mob_models_fix.mixins.json', 'Implementation-Version': mod_version }
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+    finalizedBy 'reobfJar'
+}
+
+tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
+
+// test { useJUnitPlatform() }

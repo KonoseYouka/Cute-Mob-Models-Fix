@@ -1,0 +1,46 @@
+modLoader="javafml"
+loaderVersion="${loader_version_range}"
+license="${mod_license}"
+
+[[mods]]
+modId="${mod_id}"
+version="${mod_version}"
+displayName="${mod_name}"
+authors="此瀬榕花 / Konose Youka"
+description='''
+リソースパック「Cute Mob Models: Resource Pack」に関する問題をできるだけ修正します。
+- 当たり判定の不一致
+- 他のModのモブの見た目の崩壊
+
+Fix as many issues as possible regarding "Cute Mob Models: Resource Pack":
+- Mismatched hitboxes
+- Broken appearances for mobs from other mods
+'''
+
+[[dependencies.${mod_id}]]
+modId="forge"
+mandatory=true
+versionRange="${forge_version_range}"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.${mod_id}]]
+modId="minecraft"
+mandatory=true
+versionRange="${minecraft_version_range}"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.${mod_id}]]
+modId="entity_model_features"
+mandatory=true
+versionRange="[3.3.12,)"
+ordering="AFTER"
+side="CLIENT"
+
+[[dependencies.${mod_id}]]
+modId="entity_texture_features"
+mandatory=true
+versionRange="[7.2.6,)"
+ordering="AFTER"
+side="CLIENT"

@@ -1,0 +1,21 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.konoseyouka.cmmfixer.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "client": [
+    "EMFModelPartRootMixin",
+    "ETFManagerMixin",
+    "EntityRenderDispatcherMixin",
+    "EMFModelPartMixin",
+    "PackRepositoryMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "refmap": "cute_mob_models_fix.refmap.json",
+  "mixins": [
+    "EnderDragonMixin",
+    "EntityDimensionsMixin"
+  ]
+}
