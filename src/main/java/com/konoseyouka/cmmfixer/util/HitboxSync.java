@@ -16,13 +16,17 @@ import java.util.function.Supplier;
 
 public final class HitboxSync {
     private static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
-        CMMFix.resourceLocation("hitboxes"), () -> "6", "6"::equals, "6"::equals);
+        CMMFix.resourceLocation("hitboxes"), () -> "7", "7"::equals, "7"::equals);
 
     private static Set<String> last = Set.of();
     public static Runnable clientReset = () -> {};
     private static final Map<UUID,Integer> awaitingPack = new HashMap<>();
     private static long sizeMessages, sizePayloadBytes;
     private static int resetGeneration;
+    private static int clientGeneration;
+    private static final Set<UUID> readyPlayers = new HashSet<>();
+    private static final Map<UUID, Set<UUID>> trackingPlayers = new HashMap<>();
+    public static final RemoteMeasurements remote = new RemoteMeasurements();
 
     public static void init() {
         CHANNEL.registerMessage(
@@ -44,6 +48,53 @@ public final class HitboxSync {
                 3,
                 Ready.class, Ready::encode, Ready::decode, Ready::handle,
                 Optional.of(NetworkDirection.PLAY_TO_SERVER));
+
+        CHANNEL.registerMessage(
+                4,
+                Measurement.class, Measurement::encode, Measurement::decode, Measurement::handle,
+                Optional.of(NetworkDirection.PLAY_TO_SERVER));
+    }
+
+    public static void reportMeasurement(net.minecraft.world.entity.LivingEntity entity, ModelSize size) {
+        CHANNEL.sendToServer(new Measurement(entity.getUUID(), Hitboxes.key(entity), clientGeneration, size));
+    }
+
+    public record Measurement(UUID uuid, String key, int generation, ModelSize size) {
+        void encode(FriendlyByteBuf b) {
+            new SizePacket(uuid, size).encode(b);
+            b.writeUtf(key, 32767);
+            b.writeVarInt(generation);
+        }
+
+        static Measurement decode(FriendlyByteBuf b) {
+            SizePacket size = SizePacket.decode(b);
+            return new Measurement(size.uuid(), b.readUtf(32767), b.readVarInt(), size.size());
+        }
+
+        static void handle(Measurement packet, Supplier<NetworkEvent.Context> ctx) {
+            ctx.get().enqueueWork(() -> {
+                ServerPlayer player = ctx.get().getSender();
+                if (player == null
+                        || !player.server.isDedicatedServer()
+                        || !readyPlayers.contains(player.getUUID())
+                        || packet.generation != resetGeneration
+                        || !trackingPlayers.getOrDefault(packet.uuid, Set.of()).contains(player.getUUID()))
+                    return;
+
+                var target = player.serverLevel().getEntity(packet.uuid);
+                if (!(target instanceof net.minecraft.world.entity.Mob entity)
+                        || !entity.isAlive()
+                        || !Hitboxes.key(entity).equals(packet.key)
+                        || !CMMFixConfig.HITBOXES.get()
+                        || !EntityPolicy.allowed(entity)
+                        || !HitboxRules.enabled(EntityPolicy.id(entity))
+                        || !activeServerModels().contains(EntityPolicy.id(entity)))
+                    return;
+
+                remote.accept(packet.uuid, packet.key, packet.generation, packet.size);
+            });
+            ctx.get().setPacketHandled(true);
+        }
     }
 
     public static Set<String> activeServerModels() {
@@ -64,6 +115,9 @@ public final class HitboxSync {
     @SubscribeEvent
     public static void login(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
+            readyPlayers.remove(player.getUUID());
+            if (player.server.isDedicatedServer())
+                CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new Reset(resetGeneration));
             awaitingPack.put(player.getUUID(), player.server.getTickCount() + 200);
             CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new Snapshot(activeServerModels()));
         }
@@ -95,6 +149,10 @@ public final class HitboxSync {
     public static void stop(ServerStoppedEvent event) {
         last = Set.of();
         awaitingPack.clear();
+        readyPlayers.clear();
+        trackingPlayers.clear();
+        remote.clear();
+        resetGeneration = 0;
         sizeMessages = 0;
         sizePayloadBytes = 0;
         Hitboxes.serverModels = Set.of();
@@ -110,6 +168,7 @@ public final class HitboxSync {
     public static void tracking(PlayerEvent.StartTracking event) {
         if (event.getEntity() instanceof ServerPlayer player
                 && event.getTarget() instanceof net.minecraft.world.entity.LivingEntity entity) {
+            trackingPlayers.computeIfAbsent(entity.getUUID(), ignored -> new HashSet<>()).add(player.getUUID());
             // トラッキングは、エンティティのはじめの移動tickが発生する前に、サイズ拡大を許可しない。
             // 新しいエンティティはtick()またはsendSize()から、はじめてサイズ情報を受け取る。
             ModelSize size = Hitboxes.enforced(entity);
@@ -118,6 +177,32 @@ public final class HitboxSync {
                 sizePayloadBytes += 49;
                 CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new SizePacket(entity.getUUID(), size));
             }
+        }
+    }
+
+    @SubscribeEvent
+    public static void untracking(PlayerEvent.StopTracking event) {
+        Set<UUID> players = trackingPlayers.get(event.getTarget().getUUID());
+        if (players != null) {
+            players.remove(event.getEntity().getUUID());
+            if (players.isEmpty()) trackingPlayers.remove(event.getTarget().getUUID());
+        }
+    }
+
+    @SubscribeEvent
+    public static void logout(PlayerEvent.PlayerLoggedOutEvent event) {
+        UUID id = event.getEntity().getUUID();
+        awaitingPack.remove(id);
+        readyPlayers.remove(id);
+        trackingPlayers.values().forEach(players -> players.remove(id));
+        trackingPlayers.values().removeIf(Set::isEmpty);
+    }
+
+    @SubscribeEvent
+    public static void leave(net.minecraftforge.event.entity.EntityLeaveLevelEvent event) {
+        if (!event.getLevel().isClientSide) {
+            remote.remove(event.getEntity().getUUID());
+            trackingPlayers.remove(event.getEntity().getUUID());
         }
     }
 
@@ -132,7 +217,7 @@ public final class HitboxSync {
                         () -> net.minecraft.network.chat.Component.literal(
                                 "Remeasurement requested." +
                                         "Existing collision sizes remain until new measurements are accepted." +
-                                        "Dedicated servers continue using configured profiles."), true);
+                                        " Dedicated servers accept new tracked-client measurements."), true);
                 return 1;
             }))
             .then(net.minecraft.commands.Commands.literal("status")
@@ -168,7 +253,10 @@ public final class HitboxSync {
                     player.connection.disconnect(
                             net.minecraft.network.chat.Component.literal(
                                     "The required Cute Mob Models resource pack is not active."));
-                else awaitingPack.remove(player.getUUID());
+                else {
+                    awaitingPack.remove(player.getUUID());
+                    readyPlayers.add(player.getUUID());
+                }
             });
             ctx.get().setPacketHandled(true);
         }
@@ -180,7 +268,10 @@ public final class HitboxSync {
         static Reset decode(FriendlyByteBuf b) { return new Reset(b.readVarInt()); }
 
         static void handle(Reset packet, Supplier<NetworkEvent.Context> ctx) {
-            ctx.get().enqueueWork(clientReset);
+            ctx.get().enqueueWork(() -> {
+                clientGeneration = packet.generation();
+                clientReset.run();
+            });
             ctx.get().setPacketHandled(true);
         }
     }

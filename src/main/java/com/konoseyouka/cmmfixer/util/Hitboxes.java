@@ -17,7 +17,7 @@ public final class Hitboxes {
     public static volatile Set<String> clientModels = Set.of();
     public static volatile Set<String> serverModels = Set.of();
 
-    // ホストのレンダラによって書き込み。クライアントの寸法は受け入れない。
+    // ホストのレンダラによって書き込み。専用サーバーは検証済みの遠隔計測キャッシュを使用。
     public static final Map<String, ModelSize> observed = new ConcurrentHashMap<>();
     public static final Map<String, ModelSize> exported = new ConcurrentHashMap<>();
     public static final Map<UUID, ModelSize> received = new ConcurrentHashMap<>();
@@ -159,7 +159,7 @@ public final class Hitboxes {
         var server=entity.getServer();
         ModelSize measured = server != null && !server.isDedicatedServer()
                 ? observed.get(key(entity))
-                : null;
+                : HitboxSync.remote.get(entity.getUUID(), key(entity));
 
         return measured != null
                 ? measured

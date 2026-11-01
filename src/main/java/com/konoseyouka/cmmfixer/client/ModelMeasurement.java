@@ -158,7 +158,12 @@ public final class ModelMeasurement {
         if (size != null) {
             size = size.compactFootprint();
             CmmResources.confirmDrawn(entity);
-            if (SCHEDULE.accept(Hitboxes.key(entity))) SAMPLES.remove(Hitboxes.key(entity));
+            if (SCHEDULE.accept(Hitboxes.key(entity))) {
+                SAMPLES.remove(Hitboxes.key(entity));
+                // マルチプレイでは、位置と寸法を送信
+                if (!Minecraft.getInstance().hasSingleplayerServer())
+                    com.konoseyouka.cmmfixer.util.HitboxSync.reportMeasurement(entity, size);
+            }
             Hitboxes.observed.put(Hitboxes.key(entity), size);
 
             if (entity.getPose() == net.minecraft.world.entity.Pose.STANDING)
