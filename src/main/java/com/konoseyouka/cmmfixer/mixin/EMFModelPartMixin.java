@@ -31,7 +31,6 @@ public abstract class EMFModelPartMixin {
         var root = part.getRoot();
 
         if (!part.visible
-                || part.skipDraw
                 || root==null
                 || root.currentModelVariant<=0
                 || !((CmmRootAccess)root).cmmfix$isCmm())

@@ -9,7 +9,7 @@ public record DimensionProfile(
         try {
             String[] p = text.split(",",-1);
             if ((p.length!=4 && p.length!=10)
-                    || !p[0].matches("[a-z0-9_.-]+:[a-z0-9_./-]+(?:#baby)?"))
+                    || !p[0].matches("[a-z0-9_.-]+:[a-z0-9_./-]+(?:#baby|#size[0-9]+)?"))
                 return null;
 
             float w = Float.parseFloat(p[1]), h = Float.parseFloat(p[2]), s = Float.parseFloat(p[3]);

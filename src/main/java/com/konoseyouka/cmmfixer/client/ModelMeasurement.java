@@ -3,6 +3,7 @@ package com.konoseyouka.cmmfixer.client;
 import com.konoseyouka.cmmfixer.util.EntityPolicy;
 import com.konoseyouka.cmmfixer.util.Hitboxes;
 import com.konoseyouka.cmmfixer.util.ModelSize;
+import com.konoseyouka.cmmfixer.util.HitboxRules;
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.geom.ModelPart;
@@ -17,6 +18,8 @@ public final class ModelMeasurement {
     private static final ArrayDeque<Capture> STACK = new ArrayDeque<>();
     private static final com.konoseyouka.cmmfixer.util.MeasurementSchedule SCHEDULE
             = new com.konoseyouka.cmmfixer.util.MeasurementSchedule();
+    private static final java.util.Map<String, com.konoseyouka.cmmfixer.util.GeometryBounds> SAMPLES
+            = new java.util.HashMap<>();
 
     public static long measurements;
 
@@ -26,13 +29,24 @@ public final class ModelMeasurement {
         final Entity entity;
         final Matrix4f inverse;
         final boolean enabled;
+        final java.util.Set<ModelPart> excluded;
+        final String entityId;
 
-        final com.konoseyouka.cmmfixer.util.GeometryBounds bounds=new com.konoseyouka.cmmfixer.util.GeometryBounds();
+        final com.konoseyouka.cmmfixer.util.GeometryBounds bounds;
 
         Capture(Entity entity, Matrix4f inverse, boolean enabled) {
             this.entity = entity;
             this.inverse = inverse;
             this.enabled = enabled;
+            this.excluded = enabled
+                    ? java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>())
+                    : java.util.Collections.emptySet();
+            this.entityId = enabled ? EntityPolicy.id(entity) : "";
+            this.bounds = enabled
+                    ? SAMPLES.computeIfAbsent(
+                            Hitboxes.key((LivingEntity) entity),
+                            key -> new com.konoseyouka.cmmfixer.util.GeometryBounds())
+                    : null;
         }
     }
 
@@ -41,7 +55,13 @@ public final class ModelMeasurement {
                 && entity.level() == Minecraft.getInstance().level
                 && entity instanceof LivingEntity living
                 && living.isAlive()
+                && living.tickCount >= 10
                 && living.deathTime == 0
+                && HitboxRules.enabled(EntityPolicy.id(entity))
+                && (!HitboxRules.aquatic(EntityPolicy.id(entity)) || entity.isInWater())
+                && (!(entity instanceof net.minecraft.world.entity.animal.Turtle) || !entity.isInWater())
+                && (!(entity instanceof net.minecraft.world.entity.monster.Slime slime)
+                    || HitboxRules.restingSlime(slime.onGround(), slime.isPassenger(), slime.oSquish, slime.squish))
                 && EntityPolicy.allowed(entity);
 
         Matrix4f inverse = null;
@@ -53,11 +73,18 @@ public final class ModelMeasurement {
 
             if (enabled) {
                 if (entity instanceof net.minecraft.world.entity.boss.enderdragon.EnderDragon dragon) {
-                    x += dragon.head.getX() - dragon.getX();
-                    y += dragon.head.getY() - dragon.getY();
-                    z += dragon.head.getZ() - dragon.getZ();
+                    x += net.minecraft.util.Mth.lerp(partial, dragon.head.xo, dragon.head.getX())
+                            - net.minecraft.util.Mth.lerp(partial, dragon.xo, dragon.getX());
+                    y += net.minecraft.util.Mth.lerp(partial, dragon.head.yo, dragon.head.getY())
+                            - net.minecraft.util.Mth.lerp(partial, dragon.yo, dragon.getY());
+                    z += net.minecraft.util.Mth.lerp(partial, dragon.head.zo, dragon.head.getZ())
+                            - net.minecraft.util.Mth.lerp(partial, dragon.zo, dragon.getZ());
                 }
-                float bodyYaw = net.minecraft.util.Mth.rotLerp(partial, living.yBodyRotO, living.yBodyRot);
+
+                float bodyYaw = entity instanceof net.minecraft.world.entity.boss.enderdragon.EnderDragon
+                        ? net.minecraft.util.Mth.rotLerp(partial, entity.yRotO, entity.getYRot())
+                        : net.minecraft.util.Mth.rotLerp(partial, living.yBodyRotO, living.yBodyRot);
+
                 inverse = new Matrix4f()
                         .rotationY((bodyYaw-180) * (float) Math.PI/180)
                         .mul(new Matrix4f(pose.last().pose()).translate((float) x, (float) y, (float) z).invert());
@@ -70,7 +97,15 @@ public final class ModelMeasurement {
         if (!cmm || STACK.isEmpty() || !STACK.peek().enabled) return;
 
         Capture capture = STACK.peek();
+        if (part instanceof traben.entity_model_features.models.parts.EMFModelPartCustom custom
+                && HitboxRules.excludePart(capture.entityId, custom.id))
+            part.getAllParts().forEach(capture.excluded::add);
+
+        if (capture.excluded.contains(part) || part.skipDraw) return;
+
         Matrix4f transform = new Matrix4f(capture.inverse).mul(pose.pose());
+        // 非表示の親・子ノードはサイズがゼロ
+        if (!Float.isFinite(transform.determinant()) || Math.abs(transform.determinant()) < 1.0e-8f) return;
         Vector3f vertex = new Vector3f();
 
         for (ModelPart.Cube cube : part.cubes) {
@@ -114,16 +149,20 @@ public final class ModelMeasurement {
         Capture capture=STACK.pop();
         if (!capture.enabled || !(capture.entity instanceof LivingEntity entity)) return;
 
-        ModelSize size = capture.bounds.size();
+        ModelSize size = capture.bounds.size(
+                entity instanceof net.minecraft.world.entity.boss.enderdragon.EnderDragon
+                        || entity instanceof net.minecraft.world.entity.animal.Squid
+                        || Hitboxes.hasVerticalOffset(entity));
         measurements++;
 
         if (size != null) {
+            size = size.compactFootprint();
             CmmResources.confirmDrawn(entity);
-            SCHEDULE.accept(Hitboxes.key(entity));
+            if (SCHEDULE.accept(Hitboxes.key(entity))) SAMPLES.remove(Hitboxes.key(entity));
             Hitboxes.observed.put(Hitboxes.key(entity), size);
 
             if (entity.getPose() == net.minecraft.world.entity.Pose.STANDING)
-                Hitboxes.exported.put(EntityPolicy.id(entity) + (entity.isBaby() ? ",baby" : ",adult"), size);
+                Hitboxes.exported.put(Hitboxes.profileId(entity) + (entity.isBaby() ? ",baby" : ",adult"), size);
         }
         else {
             if (SCHEDULE.exhausted(Hitboxes.key(entity)))
@@ -133,10 +172,14 @@ public final class ModelMeasurement {
         }
     }
 
-    public static void forget(java.util.UUID id) { SCHEDULE.forget(id+":"); }
+    public static void forget(java.util.UUID id) {
+        SCHEDULE.forget(id+":");
+        SAMPLES.keySet().removeIf(key -> key.startsWith(id+":"));
+    }
 
     public static void remeasure() {
         SCHEDULE.reset();
+        SAMPLES.clear();
         measurements=0;
     }
 

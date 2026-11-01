@@ -66,6 +66,12 @@ public final class PackMerger {
             if (found) added.add(mob);
         }
 
+        // ドラゴンの頭のこと忘れてた！
+        if (added.contains("dragon")) {
+            imports.add(CEM + "head_dragon.jem");
+            imports.add("assets/minecraft/models/item/dragon_head.json");
+        }
+
         // テクスチャ・モデル・アニメーションの明示的な依存関係を推移的にたどる。
         ArrayDeque<String> queue = new ArrayDeque<>(imports);
         while (!queue.isEmpty()) {

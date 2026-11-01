@@ -3,11 +3,14 @@ A mod for Minecraft `1.20.1`, Minecraft Forge `47.4.10`.
 
 Tries to fix some issues regarding [Cute Mob Models: Resource Pack](https://www.curseforge.com/minecraft/texture-packs/cute-mob-models-resource-pack).
 
+⚠️This mod modifies mobs' hitboxes. Adding it to an existing world may cause mobs to take suffocation damage. It is recommended to use this in a new world.
+
 ## Issues Resolved
 - Certain models were missing from version `1.0`, which is released for Minecraft 1.20.1.
     - Models for the Camel, Ender Dragon, Frog, Hoglin, Zoglin, Parrot, Polar Bear, Pufferfish, Salmon, Sniffer, Tadpole, and Turtle have been backported from `1.2 v5`.
 - Mismatches between visual appearance and hitboxes.
     - Hitboxes have been adjusted to align with the models' visual appearance.
+    - Axolotls, which showed significant interference with their swimming behavior, are currently excluded from the adjustments.
 - Custom models were being incorrectly applied to mobs from other mods, causing visual glitches.
     - A filter has been added. By default, custom models are applied only to vanilla mobs (excluding the color variants from newer Minecraft versions).
     - This filter can be adjusted via config.
@@ -51,7 +54,3 @@ The user assumes all risks regarding the quality and performance of this program
 - Minecraft by Mojang, Microsoft
 - Entity Texture Features, Entity Model Features by Traben
 - Cute Mob Models by _jx (original), Yarrmateys (remake), Emmie_4
-
-## TODOs
-- Slimes' hitboxes are uniform, regardless of their size.
-- Hitboxes for mobs in a lying position (like Phantoms) are taller than expected.

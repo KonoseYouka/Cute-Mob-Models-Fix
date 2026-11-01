@@ -30,15 +30,47 @@ public record ModelSize(
                 maxX*n, maxY*n, maxZ*n);
     }
 
+    /** 中心と高さを保ちながら底面を縮小。 */
+    public ModelSize compactFootprint() {
+        float factor = 2.0f / 3.0f; // 目測ベース
+        float centerX = (minX + maxX) / 2, centerZ = (minZ + maxZ) / 2;
+        float halfX = (maxX - minX) * factor / 2, halfZ = (maxZ - minZ) * factor / 2;
+
+        return new ModelSize(
+                Math.max(0.05f, width * factor), height,
+                centerX - halfX, minY, centerZ - halfZ,
+                centerX + halfX, maxY, centerZ + halfZ);
+    }
+
     public static ModelSize stableEnvelope(
             double minX, double minY, double minZ,
             double maxX, double maxY, double maxZ
     ) {
-        double height = maxY - Math.min(0, minY);
-        double visualWidth = Math.max(maxX - minX, maxZ - minZ);
-        double width = Math.min(visualWidth, height * 0.45);
+        // 足元は固定。頭が入るようにする。
+        double radius = Math.max(
+                Math.max(Math.abs(minX), Math.abs(maxX)),
+                Math.max(Math.abs(minZ), Math.abs(maxZ)));
 
-        ModelSize size = new ModelSize((float) (Math.ceil(width * 16) / 16), (float) (Math.ceil(height * 16) / 16));
+        ModelSize size = new ModelSize(roundUp(radius * 2), roundUp(Math.max(maxY, maxY - minY)));
+
+        return size.valid() ? size : null;
+    }
+
+    private static float roundUp(double value) { return (float) (Math.ceil(value * 16) / 16); }
+
+    /** 浮いているモデルは、垂直方向のオフセット・ローカル境界を保持。ドラゴンも使用。 */
+    public static ModelSize floatingEnvelope(
+            double minX, double minY, double minZ,
+            double maxX, double maxY, double maxZ
+    ) {
+        double radius = Math.max(
+                Math.max(Math.abs(minX), Math.abs(maxX)),
+                Math.max(Math.abs(minZ), Math.abs(maxZ)));
+
+        ModelSize size = new ModelSize(
+                roundUp(radius * 2), roundUp(maxY - minY),
+                (float) minX, (float) minY, (float) minZ,
+                (float) maxX, (float) maxY, (float) maxZ);
 
         return size.valid() ? size : null;
     }

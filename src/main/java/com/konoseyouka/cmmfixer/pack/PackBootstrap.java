@@ -9,7 +9,7 @@ import java.util.zip.ZipFile;
 
 public final class PackBootstrap {
     public static final String PACK_ID = "cute_mob_models_fix:required";
-    public static final String REVISION = "cmmfix-pack-2";
+    public static final String REVISION = "cmmfix-pack-3";
 
     public record Release(String file, String url, String sha256, long bytes) {}
 

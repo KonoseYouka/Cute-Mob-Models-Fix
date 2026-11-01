@@ -16,7 +16,7 @@ import java.util.function.Supplier;
 
 public final class HitboxSync {
     private static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
-        CMMFix.resourceLocation("hitboxes"), () -> "2", "2"::equals, "2"::equals);
+        CMMFix.resourceLocation("hitboxes"), () -> "6", "6"::equals, "6"::equals);
 
     private static Set<String> last = Set.of();
     public static Runnable clientReset = () -> {};
@@ -110,7 +110,9 @@ public final class HitboxSync {
     public static void tracking(PlayerEvent.StartTracking event) {
         if (event.getEntity() instanceof ServerPlayer player
                 && event.getTarget() instanceof net.minecraft.world.entity.LivingEntity entity) {
-            ModelSize size = Hitboxes.resolved(entity);
+            // トラッキングは、エンティティのはじめの移動tickが発生する前に、サイズ拡大を許可しない。
+            // 新しいエンティティはtick()またはsendSize()から、はじめてサイズ情報を受け取る。
+            ModelSize size = Hitboxes.enforced(entity);
             if (size != null) {
                 sizeMessages++;
                 sizePayloadBytes += 49;

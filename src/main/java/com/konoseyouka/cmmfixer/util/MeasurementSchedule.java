@@ -6,7 +6,7 @@ import java.util.Map;
 /** キーとスナップショットは1:1。無効なレンダリング試行の制限、Tickレート制限あり。 */
 public final class MeasurementSchedule {
     private static final class Entry {
-        int tick, attempts;
+        int tick, attempts, samples;
         boolean accepted;
     }
 
@@ -29,7 +29,11 @@ public final class MeasurementSchedule {
         return true;
     }
 
-    public void accept(String key) { entries.get(key).accepted = true; }
+    public boolean accept(String key) {
+        Entry entry = entries.get(key);
+        entry.accepted = ++entry.samples >= 3;
+        return entry.accepted;
+    }
 
     public boolean exhausted(String key) {
         Entry e = entries.get(key);

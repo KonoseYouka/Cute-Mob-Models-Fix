@@ -5,11 +5,14 @@ Minecraft `1.20.1`、Minecraft Forge `47.4.10`向けプログラム。
 
 [Cute Mob Models: Resource Pack](https://www.curseforge.com/minecraft/texture-packs/cute-mob-models-resource-pack)に関する問題を可能な限り修正します。
 
+⚠️本Modはモブの当たり判定を変更します。既存のワールドに導入すると、変更によってモブが窒息ダメージを受ける可能性があります。新規ワールドへの導入を推奨します。
+
 ## 解決される問題
 - Minecraft 1.20.1向けにリリースされているバージョン`1.0`には含まれていないモデルがある。
     - ラクダ、エンダードラゴン、カエル、ホグリン、ゾグリン、オウム、シロクマ、フグ、サケ、スニッファー、オタマジャクシ、カメが`1.2 v5`から移植されます。
 - 見た目と当たり判定が一致しない。
-    - 当たり判定をモデルの外観に基づいて補正します。
+    - 当たり判定をモデルの外観に基づき、必要に応じて補正します。
+    - 遊泳行動との干渉が強く見受けられたウーパールーパーは、現時点では変更の対象外としています。
 - 他のModのモブにカスタムモデルが適用されてしまい、見た目が崩壊する。
     - フィルターが追加されます。デフォルトではバニラのモブ (かつ、より新しいMinecraftにある色違いバージョンでないもの) のみモデルが適用されます。
     - フィルターはConfigから変更できます。
@@ -53,7 +56,3 @@ Cute Mob Models: Resource Packの表示に基づき、本プログラムも`GPL-
 - Minecraft by Mojang, Microsoft
 - Entity Texture Features, Entity Model Features by Traben
 - Cute Mob Models by _jx (original), Yarrmateys (remake), Emmie_4
-
-## TODOs
-- スライムの当たり判定が大きさにかかわらず統一されている。
-- 寝そべったポーズのモブ (ファントムなど) の当たり判定がだいぶん縦に大きい。

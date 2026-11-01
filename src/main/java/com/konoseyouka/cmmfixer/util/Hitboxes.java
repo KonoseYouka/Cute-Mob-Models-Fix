@@ -41,8 +41,8 @@ public final class Hitboxes {
         return profiles;
     }
 
-    private static final Map<LivingEntity, Optional<ModelSize>> LAST
-            = Collections.synchronizedMap(new WeakHashMap<>());
+    private static final Map<LivingEntity, Optional<ModelSize>> LAST = Collections.synchronizedMap(new WeakHashMap<>());
+    private static final Map<LivingEntity, GrowthGuard> GROWTH = new WeakHashMap<>();
 
     /** キャッシュされた代表値。
      *  衝突・移動に関するフックは、設定情報をスキャンしたり、リフレクションで他Modに干渉したりしない。 */
@@ -54,14 +54,77 @@ public final class Hitboxes {
     }
 
     public static String key(LivingEntity entity) {
-        return entity.getUUID() + ":"
-                + entity.isBaby() + ":"
+        return entity.getUUID()
+                + ":"
+                + entity.isBaby()
+                + ":"
+                + (entity instanceof net.minecraft.world.entity.monster.Slime slime
+                        ? slime.getSize() : 0)
+                + ":"
+                + (entity instanceof net.minecraft.world.entity.monster.Phantom phantom
+                        ? phantom.getPhantomSize() : 0)
+                + ":"
                 + (entity.getCustomName() == null
-                        ? ""
-                        : net.minecraft.network.chat.Component.Serializer.toJson(entity.getCustomName()));
+                        ? "" : net.minecraft.network.chat.Component.Serializer.toJson(entity.getCustomName()));
+    }
+
+    public static boolean hasVerticalOffset(LivingEntity entity) {
+        // 移動のために、底面とエンティティのY座標を一致させる。
+        return entity instanceof net.minecraft.world.entity.monster.Phantom;
+    }
+
+    public static String profileId(LivingEntity entity) {
+        String id = EntityPolicy.id(entity);
+
+        if (entity instanceof net.minecraft.world.entity.monster.Slime slime)
+            return id + "#size" + slime.getSize();
+        if (entity instanceof net.minecraft.world.entity.monster.Phantom phantom)
+            return id + "#size" + phantom.getPhantomSize();
+
+        return id;
     }
 
     public static ModelSize resolved(LivingEntity entity) {
+        if (!HitboxRules.enabled(EntityPolicy.id(entity))) return null;
+
+        ModelSize size = resolveUnconstrained(entity);
+        if (entity.level().isClientSide
+                || entity instanceof EnderDragon)
+            return size;
+        if (size == null) {
+            GROWTH.remove(entity);
+            return null;
+        }
+
+        EntityDimensions vanilla = entity.getDimensions(entity.getPose());
+        size = HitboxRules.limit(EntityPolicy.id(entity), size, vanilla.width, vanilla.height, entity.isInWater());
+        AABB currentBox = entity.getBoundingBox();
+
+        ModelSize current = new ModelSize(
+                (float) Math.min(currentBox.getXsize(),
+                        currentBox.getZsize()),
+                (float) currentBox.getYsize());
+
+        return GROWTH.computeIfAbsent(
+                entity,
+                ignored -> new GrowthGuard()).resolve(
+                        size,
+                        new ModelSize(vanilla.width, vanilla.height),
+                        current,
+                        entity.tickCount,
+                        candidate -> {
+                    AABB box = EntityDimensions
+                            .scalable(candidate.width(), candidate.height())
+                            .makeBoundingBox(entity.position());
+                    if (hasVerticalOffset(entity))
+                        box = box.move(0, candidate.minY(), 0);
+
+                    // ブロックだけ、モブはなし。
+                    return !entity.level().getBlockCollisions(entity, box.deflate(1.0e-7)).iterator().hasNext();
+                });
+    }
+
+    private static ModelSize resolveUnconstrained(LivingEntity entity) {
         if (!entity.isAddedToWorld()
                 || !(entity instanceof Mob)
                 || !CMMFixConfig.SPEC.isLoaded()
@@ -78,6 +141,11 @@ public final class Hitboxes {
         if (entity.level().isClientSide) return received.get(entity.getUUID());
 
         Map<String,DimensionProfile> profiles = profiles();
+        DimensionProfile sized = !profileId(entity).equals(id)
+                ? profiles.get(profileId(entity))
+                : null;
+        if (sized != null) return sized.size();
+
         DimensionProfile baby = entity.isBaby()
                 ? profiles.get(id + "#baby")
                 : null;
@@ -92,9 +160,22 @@ public final class Hitboxes {
         ModelSize measured = server != null && !server.isDedicatedServer()
                 ? observed.get(key(entity))
                 : null;
+
         return measured != null
                 ? measured
-                : BaselineDimensions.get(id,entity.isBaby());
+                : fallback(entity, id);
+    }
+
+    private static ModelSize fallback(LivingEntity entity, String id) {
+        ModelSize size = BaselineDimensions.get(id, entity.isBaby());
+
+        if (entity instanceof net.minecraft.world.entity.monster.Slime slime)
+            return size.scale(slime.getSize() / 2.0f);
+
+        if (entity instanceof net.minecraft.world.entity.monster.Phantom phantom)
+            return size.scale(1 + phantom.getPhantomSize() * 0.15f);
+
+        return size;
     }
 
     @SuppressWarnings("removal")
@@ -104,7 +185,9 @@ public final class Hitboxes {
                 || entity instanceof EnderDragon)
             return;
 
-        ModelSize size = resolved(entity);
+        // バニラのスポーン判定にはバニラの寸法を使う。
+        // 実際のスポーン位置が決まった後、最初のサーバーtickで変更。
+        ModelSize size = enforced(entity);
         if (size == null) return;
 
         event.setNewSize(EntityDimensions.scalable(size.width(), size.height()));
@@ -144,7 +227,11 @@ public final class Hitboxes {
             String prefix = entity.getUUID() + ":";
             observed.keySet().removeIf(key -> key.startsWith(prefix));
         }
-        if (entity instanceof LivingEntity living) LAST.remove(living);
+
+        if (entity instanceof LivingEntity living) {
+            LAST.remove(living);
+            if (!entity.level().isClientSide) GROWTH.remove(living);
+        }
     }
 
     /** エンダードラゴンのマルチパートの対処 */
@@ -152,12 +239,20 @@ public final class Hitboxes {
         ModelSize shape = resolved(dragon);
         if (shape == null) return;
 
-        // CMMドラゴンはバニラの頭部に付随。
-        // 視点依存のワールド空間のボックスではなく、部位追従する一定のエンベロープを維持。
-        AABB box = new AABB(
-                -shape.width() / 2, -shape.height() * 0.85, -shape.width() / 2,
-                shape.width() / 2, shape.height() * 0.15, shape.width() / 2
-        ).move(dragon.head.position());
+        double angle = Math.toRadians(180 - dragon.getYRot());
+        double sin = Math.sin(angle), cos = Math.cos(angle);
+        double minX = Double.POSITIVE_INFINITY, minZ = minX;
+        double maxX = Double.NEGATIVE_INFINITY, maxZ = maxX;
+
+        for (int i = 0; i < 4; i++) {
+            double x = (i & 1) == 0 ? shape.minX() : shape.maxX();
+            double z = (i & 2) == 0 ? shape.minZ() : shape.maxZ();
+            double rx = cos * x + sin * z, rz = -sin * x + cos * z;
+            minX = Math.min(minX, rx); maxX = Math.max(maxX, rx);
+            minZ = Math.min(minZ, rz); maxZ = Math.max(maxZ, rz);
+        }
+
+        AABB box = new AABB(minX, shape.minY(), minZ, maxX, shape.maxY(), maxZ).move(dragon.head.position());
 
         for (var part:dragon.getSubEntities()) {
             part.setBoundingBox(part == dragon.head
@@ -166,10 +261,7 @@ public final class Hitboxes {
         }
 
         // マルチパートが計測対象のモデルを検出できるようにする。
-        dragon.setBoundingBox(
-                dragon.getDimensions(dragon.getPose())
-                        .makeBoundingBox(dragon.position())
-                        .minmax(box));
+        dragon.setBoundingBox(box);
     }
 
     private Hitboxes() {}

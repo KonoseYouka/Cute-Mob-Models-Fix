@@ -1,9 +1,7 @@
 package com.konoseyouka.cmmfixer.client;
 
 import com.konoseyouka.cmmfixer.CMMFix;
-import com.konoseyouka.cmmfixer.pack.PackMerger;
 import com.konoseyouka.cmmfixer.util.Hitboxes;
-import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.RegisterClientReloadListenersEvent;
@@ -16,7 +14,6 @@ import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import java.nio.file.*;
 import java.io.IOException;
-import java.util.List;
 
 @Mod.EventBusSubscriber(modid = CMMFix.MODID, value = Dist.CLIENT, bus = Mod.EventBusSubscriber.Bus.MOD)
 public final class ClientSetup {
@@ -44,7 +41,7 @@ public final class ClientSetup {
         entries.forEach((key, size) -> {
             String id = key.substring(0,key.lastIndexOf(','));
             boolean baby = key.endsWith(",baby");
-            ids.add(id);
+            ids.add(id.split("#", 2)[0]);
 
             profiles.add(id + (baby ? "#baby" : "") + ","
                     + size.width()+ "," + size.height() + ",1,"
