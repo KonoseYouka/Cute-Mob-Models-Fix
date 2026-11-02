@@ -41,8 +41,6 @@ In accordance with the terms of Cute Mob Models: Resource Pack, this program is 
 
 Required resources are retrieved from the CurseForge CDN on the user's machine and processed locally to ensure compatibility. The redistribution of any generated resource packs is a separate action from the redistribution of this mod itself and must comply with the usage terms of the original Pack.
 
-Additionally, [Phenol-Docs](https://github.com/KonoseYouka/Phenol-Docs) is not applied to this program.
-
 ## Disclaimer
 To the extent permitted by applicable law, this program is provided without any warranties.
 
